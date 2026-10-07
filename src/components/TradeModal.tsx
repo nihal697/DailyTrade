@@ -89,7 +89,7 @@ export function TradeModal({ asset, currentPrice, account, positionQty, onMarket
         {/* Order Type Tabs */}
         <div className="tab-bar" style={{ marginBottom: 12 }}>
           {(['market', 'limit'] as Tab[]).map(t => (
-            <button key={t} className={`tab-item${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+            <button key={t} className={`tab-btn${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
               {t.toUpperCase()} ORDER
             </button>
           ))}
