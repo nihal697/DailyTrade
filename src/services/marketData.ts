@@ -40,12 +40,27 @@ const QUOTE_TO_ANGEL = new Map<string, AngelId>(
 );
 
 // Yahoo tells us the real session state per symbol (REGULAR vs PRE/POST/CLOSED).
-// Cached on every quote fetch; null = unknown (Yahoo unreachable) -> assume open
-// so a Yahoo outage never freezes a live market.
-const marketOpenCache = new Map<string, boolean>();
+// Lesson learned: meta.marketState is sometimes ABSENT (we saw it missing on a
+// flat off-hours quote), so "unknown" must fall back to the IST clock plus
+// data freshness — never to blind ticking.
+interface YahooMeta { state: string | null; mktTime: number | null; receivedAt: number }
+const metaCache = new Map<string, YahooMeta>();
 
-export function isMarketOpen(quoteSymbol: string): boolean | null {
-  return marketOpenCache.has(quoteSymbol) ? marketOpenCache.get(quoteSymbol)! : null;
+function clockOpenIST(now = new Date()): boolean {
+  const ist = new Date(now.getTime() + (330 + now.getTimezoneOffset()) * 60000);
+  const day = ist.getDay();
+  if (day === 0 || day === 6) return false;
+  const mins = ist.getHours() * 60 + ist.getMinutes();
+  return mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
+}
+
+export function isMarketOpen(quoteSymbol: string): boolean {
+  const rec = metaCache.get(quoteSymbol);
+  if (rec?.state) return rec.state === 'REGULAR';       // Yahoo explicit word
+  if (!clockOpenIST()) return false;                     // shut by the clock
+  if (rec && Date.now() - rec.receivedAt < 10 * 60 * 1000
+         && rec.mktTime && Date.now() / 1000 - rec.mktTime < 20 * 60) return true;
+  return false; // clock says open but no fresh exchange data (holiday/outage): freeze, don't invent
 }
 
 interface AngelLtp { market_open: boolean; stale: boolean; broker?: string | null; data: Record<string, { price: number | null; ts: string | null }> }
@@ -229,8 +244,12 @@ export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
   const meta = r?.meta;
   if (!meta || !meta.regularMarketPrice) return null;
 
-  if (typeof meta.marketState === 'string') {
-    marketOpenCache.set(symbol, meta.marketState === 'REGULAR');
+  if (typeof meta.marketState === 'string' || typeof meta.regularMarketTime === 'number') {
+    metaCache.set(symbol, {
+      state: typeof meta.marketState === 'string' ? meta.marketState : null,
+      mktTime: typeof meta.regularMarketTime === 'number' ? meta.regularMarketTime : null,
+      receivedAt: Date.now(),
+    });
   }
 
   const price = meta.regularMarketPrice;

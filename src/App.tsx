@@ -172,9 +172,8 @@ export default function App() {
         handlePricesUpdate({ [selectedAsset.symbol]: targetPrice });
         // Synthetic ticks bridge gaps between real ticks — they must never
         // invent movement in a closed market (or limit orders would fill on
-        // fabricated prices). Unknown state (Yahoo unreachable) keeps ticking
-        // so a Yahoo outage can't freeze a live market.
-        if (q && isMarketOpen(selectedAsset.quoteSymbol) === false) return;
+        // fabricated prices). Ticks run only on proven-open state.
+        if (!isMarketOpen(selectedAsset.quoteSymbol)) return;
         stopSynthetic = startSyntheticTicks(selectedAsset.symbol, targetPrice, (price) => {
           if (cancelled) return;
           setLivePrice(price);
