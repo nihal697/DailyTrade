@@ -142,6 +142,7 @@ export function ChainView({ onTradeLeg }: Props) {
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
           {chain?.spot != null ? `SPOT ${formatAssetPrice(chain.spot, '^NSEI')}` : loading ? 'LOADING…' : ''}
           {chain && <span style={{ color: '#6ee7b7' }}> · ANGEL</span>}
+          {chain?.as_of ? ` · AS OF ${chain.as_of.slice(11, 16)}` : ''}
         </span>
       </div>
 

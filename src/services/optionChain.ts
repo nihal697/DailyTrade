@@ -65,6 +65,7 @@ export interface ChainData {
   underlying: OptionUnderlying;
   expiry: string | null;
   spot: number | null;
+  as_of: string | null;
   lot_size: number;
   strikes: ChainStrike[];
   source?: string;
