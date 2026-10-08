@@ -27,7 +27,7 @@ export function Header({ account, totalEquityUSD, unrPnLUSD, onOpenAccountModal,
       {/* Left: Brand Logo & Account */}
       <div className="row gap-2" style={{ alignItems: 'center' }}>
         <img
-          src="/logo.png"
+          src="/logo.webp"
           alt="DailyTrade"
           style={{
             width: 24,

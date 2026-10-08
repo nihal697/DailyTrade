@@ -15,15 +15,15 @@
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon-512.webp",
       "sizes": "512x512",
-      "type": "image/png",
+      "type": "image/webp",
       "purpose": "any maskable"
     },
     {
-      "src": "/logo.png",
+      "src": "/logo.webp",
       "sizes": "1024x1024",
-      "type": "image/png"
+      "type": "image/webp"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="public/logo.png" alt="DailyTrade Logo" width="96" style="border-radius: 18px; margin-bottom: 14px;" />
+<img src="public/logo.webp" alt="DailyTrade Logo" width="96" style="border-radius: 18px; margin-bottom: 14px;" />
 <br/>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

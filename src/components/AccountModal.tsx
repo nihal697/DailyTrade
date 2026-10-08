@@ -143,7 +143,7 @@ export function AccountModal({
               <div className="row between" style={{ alignItems: 'center' }}>
                 <div className="row gap-2" style={{ alignItems: 'center' }}>
                   <img
-                    src="/logo.png"
+                    src="/logo.webp"
                     alt="DailyTrade Logo"
                     style={{
                       width: 26,
