@@ -4,6 +4,7 @@ import type { Asset } from '../types/market';
 import type { Account } from '../types/account';
 import { formatCurrency } from '../services/storage';
 import { formatAssetPrice } from '../utils/formatPrice';
+import { toUSD } from '../services/marketData';
 
 interface Props {
   asset: Asset;
@@ -174,8 +175,8 @@ export function TradeModal({ asset, currentPrice, account, positionQty, onMarket
         {quantityNum > 0 && (
           <div className="row between" style={{ padding: '8px 12px', background: 'var(--bg-subtle)', border: '1px solid var(--border-dim)', marginBottom: 12 }}>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>TOTAL COST</span>
-            <span className="num font-bold" style={{ fontSize: 14, color: cost > account.cashUSD ? 'var(--color-bear)' : 'var(--text-primary)' }}>
-              {formatCurrency(cost, account.currency)}
+            <span className="num font-bold" style={{ fontSize: 14, color: toUSD(cost, asset.symbol) > account.cashUSD ? 'var(--color-bear)' : 'var(--text-primary)' }}>
+              {formatAssetPrice(cost, asset.symbol)}
             </span>
           </div>
         )}

@@ -26,6 +26,7 @@ export function ChainView({ onTradeLeg }: Props) {
   const [expiry, setExpiry] = useState<string>('');
   const [chain, setChain] = useState<ChainData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hint, setHint] = useState('');
 
   const configured = bridgeConfigured();
 
@@ -76,11 +77,17 @@ export function ChainView({ onTradeLeg }: Props) {
     return (
       <button
         key={side}
-        disabled={!has}
-        onClick={() => has && onTradeLeg({
-          underlying, strike: s.strike, optType, expiry: chain!.expiry ?? '',
-          lotSize: leg.lot_size || chain?.lot_size || 1, ltp: leg.ltp, token: leg.token,
-        })}
+        onClick={() => {
+          if (has) {
+            setHint('');
+            onTradeLeg({
+              underlying, strike: s.strike, optType, expiry: chain!.expiry ?? '',
+              lotSize: leg.lot_size || chain?.lot_size || 1, ltp: leg.ltp, token: leg.token,
+            });
+          } else {
+            setHint('No live premium on this strike yet — taps work once its tick streams in.');
+          }
+        }}
         style={{
           flex: 1, padding: '9px 4px', cursor: has ? 'pointer' : 'default',
           background: has ? 'var(--bg-subtle)' : 'transparent',
@@ -130,6 +137,11 @@ export function ChainView({ onTradeLeg }: Props) {
         <span style={{ width: 76, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>STRIKE</span>
         <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-bear)' }}>PUTS</span>
       </div>
+      {hint && (
+        <p style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', padding: '6px 12px' }}>
+          {hint}
+        </p>
+      )}
 
       <div className="col" style={{ overflowY: 'auto', padding: '4px 8px 12px', gap: 4 }}>
         {chain?.strikes.map(s => {
