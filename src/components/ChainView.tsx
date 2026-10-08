@@ -151,6 +151,25 @@ export function ChainView({ onTradeLeg }: Props) {
         <span style={{ width: 76, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>STRIKE</span>
         <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-bear)' }}>PUTS</span>
       </div>
+      {chain != null && (chain.pcr != null || chain.max_pain != null || chain.atm_iv != null) && (
+        <div className="row" style={{ padding: '6px 12px', gap: 14, borderBottom: '1px solid var(--border-dim)', justifyContent: 'center' }}>
+          {chain.pcr != null && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
+              PCR <b style={{ color: 'var(--text-primary)' }}>{chain.pcr.toFixed(2)}</b>
+            </span>
+          )}
+          {chain.max_pain != null && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
+              MAX PAIN <b style={{ color: 'var(--text-primary)' }}>{chain.max_pain.toLocaleString('en-US')}</b>
+            </span>
+          )}
+          {chain.atm_iv != null && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
+              ATM IV <b style={{ color: 'var(--text-primary)' }}>{(chain.atm_iv * 100).toFixed(2)}%</b>
+            </span>
+          )}
+        </div>
+      )}
       {hint && (
         <p style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', padding: '6px 12px' }}>
           {hint}

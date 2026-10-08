@@ -69,6 +69,10 @@ export interface ChainData {
   lot_size: number;
   strikes: ChainStrike[];
   source?: string;
+  pcr?: number | null;
+  max_pain?: number | null;
+  atm_iv?: number | null;
+  oi_window?: boolean;
 }
 
 /** "NIFTY 22600 CE 13OCT" — readable, unique, doubles as the position symbol. */
