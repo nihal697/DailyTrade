@@ -8,10 +8,11 @@ interface Props {
   leg: TradeLeg;
   onBuy: (lots: number, price: number,
           type: 'market' | 'limit', limitPrice?: number) => string | null;
+  onViewChart: () => void;
   onClose: () => void;
 }
 
-export function OptionTicket({ leg, onBuy, onClose }: Props) {
+export function OptionTicket({ leg, onBuy, onViewChart, onClose }: Props) {
   const [lots, setLots] = useState(1);
   const [tab, setTab] = useState<'market' | 'limit'>('market');
   const [limitPrice, setLimitPrice] = useState(leg.ltp != null && leg.ltp > 0 ? String(leg.ltp) : '');
@@ -119,6 +120,14 @@ export function OptionTicket({ leg, onBuy, onClose }: Props) {
           onClick={submit}
         >
           BUY {lots} LOT{lots > 1 ? 'S' : ''} {tab === 'market' ? 'AT MARKET' : 'LIMIT'}
+        </button>
+
+        <button
+          className="btn btn-ghost"
+          style={{ width: '100%', padding: '10px', fontSize: 11, marginTop: 8 }}
+          onClick={onViewChart}
+        >
+          VIEW CHART
         </button>
       </div>
     </div>

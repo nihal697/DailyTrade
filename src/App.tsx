@@ -27,7 +27,7 @@ import {
   subscribeLiveQuote, subscribeAllQuotes, startSyntheticTicks,
   toUSD, fromUSD, refreshUsdInr,
 } from './services/marketData';
-import { fetchOptionChain, makeOptionSymbol, UNDERLYING_YAHOO } from './services/optionChain';
+import { fetchOptionChain, fetchOptionCandles, makeOptionSymbol, UNDERLYING_YAHOO } from './services/optionChain';
 import type { Candle } from './types/market';
 import { Info, Download } from 'lucide-react';
 import { formatAssetPrice } from './utils/formatPrice';
@@ -56,6 +56,11 @@ export default function App() {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [ticketLeg, setTicketLeg] = useState<TradeLeg | null>(null);
+  const [chartLeg, setChartLeg] = useState<TradeLeg | null>(null);
+  const [chartCandles, setChartCandles] = useState<Candle[]>([]);
+  const [chartTf, setChartTf] = useState<Timeframe>('1m');
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartLive, setChartLive] = useState<number | null>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -265,6 +270,43 @@ export default function App() {
     return () => { cancelled = true; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.positions.map(p => p.id).join(',')]);
+
+  // ── Option contract chart (bridge history, never Yahoo fallback fiction) ──
+  useEffect(() => {
+    const token = chartLeg?.token;
+    const underlying = chartLeg?.underlying;
+    if (!token || !underlying) { setChartCandles([]); return; }
+    let cancelled = false;
+    const controller = new AbortController();
+    setChartLoading(true);
+    fetchOptionCandles(underlying, token, chartTf, controller.signal)
+      .then(rows => { if (!cancelled) { setChartCandles(rows); setChartLoading(false); } })
+      .catch(() => { if (!cancelled) setChartLoading(false); });
+    return () => { cancelled = true; controller.abort(); };
+  }, [chartLeg, chartTf]);
+
+  // Live tick for the open contract chart (chain poll, 15s)
+  useEffect(() => {
+    const token = chartLeg?.token;
+    const underlying = chartLeg?.underlying;
+    if (!token || !underlying) { setChartLive(null); return; }
+    let cancelled = false;
+    const pull = async () => {
+      const chain = await fetchOptionChain(underlying).catch(() => null);
+      if (cancelled || !chain) return;
+      for (const s of chain.strikes) {
+        for (const side of [s.ce, s.pe] as const) {
+          if (String(side.token) === String(token) && side.ltp != null) {
+            setChartLive(side.ltp);
+            return;
+          }
+        }
+      }
+    };
+    pull();
+    const id = setInterval(pull, 15_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [chartLeg]);
 
   // ── Expired option settlement (European cash-settled at expiry close) ───
   useEffect(() => {
@@ -557,13 +599,34 @@ export default function App() {
       )}
 
       {/* ── Option Ticket Modal ─────────────────────────────────────────── */}
-      {ticketLeg && (
+      {ticketLeg && !chartLeg && (
         <OptionTicket
           leg={ticketLeg}
           onBuy={(lots, price, type, limitPrice) =>
             handleBuyOption(ticketLeg, lots, price, type, limitPrice)}
+          onViewChart={() => setChartLeg(ticketLeg)}
           onClose={() => setTicketLeg(null)}
         />
+      )}
+
+      {/* ── Option Contract Chart Overlay ─────────────────────────────── */}
+      {chartLeg && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 60, background: '#000',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          <TradingViewChart
+            symbol={makeOptionSymbol(chartLeg.underlying, chartLeg.strike, chartLeg.optType, chartLeg.expiry)}
+            name={`${chartLeg.underlying} ${chartLeg.strike} ${chartLeg.optType} · exp ${chartLeg.expiry}`}
+            assetClass="option"
+            candles={chartCandles}
+            livePrice={chartLive}
+            timeframe={chartTf}
+            onTimeframeChange={setChartTf}
+            loading={chartLoading}
+            onBack={() => { setChartLeg(null); setChartCandles([]); setChartLive(null); }}
+          />
+        </div>
       )}
 
       {/* ── Asset Detail Sheet / Modal ──────────────────────────── */}

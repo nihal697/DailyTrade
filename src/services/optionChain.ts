@@ -1,5 +1,6 @@
 import { getBridgeUrl } from './marketData';
 import type { OptionUnderlying, OptionType } from '../types/trade';
+import type { Candle, Timeframe } from '../types/market';
 
 export const OPTION_UNDERLYINGS: OptionUnderlying[] = ['NIFTY', 'BANKNIFTY', 'SENSEX'];
 
@@ -20,7 +21,6 @@ export interface DayRange {
   low: number;
   volume: number;
 }
-
 /** Today's range for one contract, from Angel history via the bridge. */
 export async function fetchOptionDayRange(underlying: OptionUnderlying,
                                           token?: string): Promise<DayRange | null> {
@@ -113,4 +113,48 @@ export async function fetchOptionChain(underlying: OptionUnderlying,
   const data = j as ChainData;
   chainCache.set(key, { ts: Date.now(), data });
   return data;
+}
+
+const TF_INTERVAL: Record<Timeframe, { interval: string; days: number }> = {
+  '1m':  { interval: 'ONE_MINUTE', days: 0 },
+  '5m':  { interval: 'FIVE_MINUTE', days: 0 },
+  '15m': { interval: 'FIFTEEN_MINUTE', days: 0 },
+  '1h':  { interval: 'ONE_HOUR', days: 5 },
+  '1D':  { interval: 'ONE_DAY', days: 90 },
+};
+
+const histCache = new Map<string, { ts: number; data: Candle[] }>();
+const HIST_TTL_MS = 60_000;
+
+/** Real contract candles from Angel history via the bridge (Yahoo has none). */
+export async function fetchOptionCandles(underlying: OptionUnderlying, token: string,
+                                         tf: Timeframe, signal?: AbortSignal): Promise<Candle[]> {
+  const key = `${underlying}|${token}|${tf}`;
+  const cached = histCache.get(key);
+  if (cached && Date.now() - cached.ts < HIST_TTL_MS) return cached.data;
+  const base = getBridgeUrl();
+  if (!base) return [];
+  const { interval, days } = TF_INTERVAL[tf];
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const from = new Date(now.getTime() - days * 86400_000);
+  try {
+    const res = await fetch(
+      `${base}/history?exchange=${UNDERLYING_EXCHANGE[underlying]}&token=${token}` +
+      `&interval=${interval}&frm=${encodeURIComponent(fmt(from))}&to=${encodeURIComponent(fmt(now))}`,
+      { signal: signal ?? AbortSignal.timeout(20000) });
+    if (!res.ok) return cached?.data ?? [];
+    const j = await res.json();
+    const rows = Array.isArray(j?.candles) ? j.candles : [];
+    const out: Candle[] = rows
+      .filter((c: any) => c && c.close > 0)
+      .map((c: any) => ({ time: c.time, open: c.open, high: c.high,
+                          low: c.low, close: c.close, volume: c.volume ?? 0 }));
+    if (out.length > 5) histCache.set(key, { ts: Date.now(), data: out });
+    return out.length > 5 ? out : cached?.data ?? [];
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw e;
+    return cached?.data ?? [];
+  }
 }
