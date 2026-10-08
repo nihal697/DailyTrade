@@ -21,7 +21,7 @@ import type { Asset, Timeframe } from './types/market';
 import { formatCurrency, type AppState } from './services/storage';
 import { checkAndAutoRestore } from './services/backupService';
 import {
-  fetchBinanceCandles, fetchCandles, fetchYahooQuote,
+  fetchBinanceCandles, fetchCandles, fetchYahooQuote, isMarketOpen,
   subscribeLiveQuote, subscribeAllQuotes, startSyntheticTicks,
 } from './services/marketData';
 import type { Candle } from './types/market';
@@ -163,12 +163,6 @@ export default function App() {
       const existingPrice = prices[selectedAsset.symbol];
       if (existingPrice) {
         setLivePrice(existingPrice);
-        stopSynthetic = startSyntheticTicks(selectedAsset.symbol, existingPrice, (price) => {
-          if (cancelled) return;
-          setLivePrice(price);
-          handlePricesUpdate({ [selectedAsset.symbol]: price });
-          engine.checkLimitOrders({ [selectedAsset.symbol]: price });
-        }, 1200);
       }
 
       fetchYahooQuote(selectedAsset.quoteSymbol).then(q => {
@@ -176,7 +170,11 @@ export default function App() {
         const targetPrice = q?.price ?? existingPrice ?? 100;
         setLivePrice(targetPrice);
         handlePricesUpdate({ [selectedAsset.symbol]: targetPrice });
-        stopSynthetic?.();
+        // Synthetic ticks bridge gaps between real ticks — they must never
+        // invent movement in a closed market (or limit orders would fill on
+        // fabricated prices). Unknown state (Yahoo unreachable) keeps ticking
+        // so a Yahoo outage can't freeze a live market.
+        if (q && isMarketOpen(selectedAsset.quoteSymbol) === false) return;
         stopSynthetic = startSyntheticTicks(selectedAsset.symbol, targetPrice, (price) => {
           if (cancelled) return;
           setLivePrice(price);

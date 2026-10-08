@@ -162,7 +162,7 @@ export function AssetDetail({ asset, currentPrice, isFavourite, onToggleFavourit
                       color: info.quote.source === 'angel' ? '#6ee7b7' : 'var(--text-muted)',
                       border: '1px solid var(--border-mid)', padding: '2px 6px',
                     }}>
-                      {info.quote.source === 'angel' ? '● ANGEL LIVE' : '● BINANCE LIVE'}
+                      {info.quote.source === 'angel' ? `● ${info.quote.feed ?? 'ANGEL'} LIVE` : '● BINANCE LIVE'}
                     </div>
                   )}
                 </div>

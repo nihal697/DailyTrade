@@ -39,7 +39,16 @@ const QUOTE_TO_ANGEL = new Map<string, AngelId>(
   ASSETS.filter(a => a.angelId).map(a => [a.quoteSymbol, a.angelId as AngelId])
 );
 
-interface AngelLtp { market_open: boolean; stale: boolean; data: Record<string, { price: number | null; ts: string | null }> }
+// Yahoo tells us the real session state per symbol (REGULAR vs PRE/POST/CLOSED).
+// Cached on every quote fetch; null = unknown (Yahoo unreachable) -> assume open
+// so a Yahoo outage never freezes a live market.
+const marketOpenCache = new Map<string, boolean>();
+
+export function isMarketOpen(quoteSymbol: string): boolean | null {
+  return marketOpenCache.has(quoteSymbol) ? marketOpenCache.get(quoteSymbol)! : null;
+}
+
+interface AngelLtp { market_open: boolean; stale: boolean; broker?: string | null; data: Record<string, { price: number | null; ts: string | null }> }
 let angelCache: { ts: number; data: AngelLtp } | null = null;
 const ANGEL_TTL_MS = 5000;
 
@@ -76,7 +85,8 @@ export async function applyAngelOverlay(quoteSymbol: string, quote: Quote): Prom
     const change = tick.price - prevClose;
     return { ...quote, price: tick.price, change,
              changePct: (change / prevClose) * 100,
-             timestamp: Date.now(), source: 'angel' as const };
+             timestamp: Date.now(), source: 'angel' as const,
+             feed: (ltp.broker ?? 'angel').toUpperCase() };
   } catch {
     return quote;
   }
@@ -218,6 +228,10 @@ export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
   const r = json.chart.result[0];
   const meta = r?.meta;
   if (!meta || !meta.regularMarketPrice) return null;
+
+  if (typeof meta.marketState === 'string') {
+    marketOpenCache.set(symbol, meta.marketState === 'REGULAR');
+  }
 
   const price = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;

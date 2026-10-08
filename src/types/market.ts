@@ -26,6 +26,7 @@ export interface Quote {
   volume: number;
   timestamp: number;
   source?: QuoteSource; // where the price came from (default: yahoo)
+  feed?: string;        // bridge broker name when source is angel (e.g. ANGEL, DHAN)
 }
 
 export type Timeframe = '1m' | '5m' | '15m' | '1h' | '1D';
