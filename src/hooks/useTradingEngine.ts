@@ -290,6 +290,22 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
     });
   }, [setState, onNotify]);
 
+  // ── Stamp last-seen option prices (throttled by caller) ───────────────────
+  // Lets option MTM survive restarts: no live tick yet -> last known, labeled.
+  const stampOptionPrices = useCallback((updates: Record<string, { price: number; ts: number }>) => {
+    setState(prev => {
+      let changed = false;
+      const positions = prev.positions.map(p => {
+        const u = updates[p.symbol];
+        if (!u || !p.opt || p.lastPx === u.price) return p;
+        changed = true;
+        return { ...p, lastPx: u.price, lastPxTs: u.ts };
+      });
+      if (!changed) return prev;
+      return { ...prev, positions };
+    });
+  }, [setState]);
+
   // ── Account management ────────────────────────────────────────────────────
   const createAccount = useCallback((name: string, currency: Currency, startingCashUSD: number) => {
     const id = crypto.randomUUID();
@@ -368,7 +384,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
     state, activeAccount, positions, orders, history,
     calcUnrealisedPnL, calcEquity, recordEquity,
     marketBuy, closePosition, placeLimitOrder, cancelOrder, checkLimitOrders,
-    settleOptionExpiry,
+    settleOptionExpiry, stampOptionPrices,
     createAccount, switchAccount, topUpAccount, resetAccount, deleteAccount, updateAccountCurrency,
     replaceState,
   };

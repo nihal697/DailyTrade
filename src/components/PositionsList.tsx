@@ -23,6 +23,7 @@ export function PositionsList({ positions, orders, history, prices, account, onC
     const pos = positions.find(pp => pp.symbol === symbol);
     const live = prices[symbol];
     if (live != null) return toUSD(live, symbol);
+    if (pos?.lastPx != null) return toUSD(pos.lastPx, symbol);
     return pos ? pos.entryPriceUSD : 0;
   };
   const totalUnrPnL = positions.reduce((sum, p) => {
@@ -66,7 +67,9 @@ export function PositionsList({ positions, orders, history, prices, account, onC
         </div>
       )}
       {positions.map(pos => {
-        const curNative = prices[pos.symbol] ?? fromUSD(pos.entryPriceUSD, pos.symbol);
+        const livePx = prices[pos.symbol];
+        const usingLast = livePx == null && pos.lastPx != null;
+        const curNative = livePx ?? pos.lastPx ?? fromUSD(pos.entryPriceUSD, pos.symbol);
         const curPrice = toUSD(curNative, pos.symbol);
         const pnlUSD = (curPrice - pos.entryPriceUSD) * pos.quantity;
         const pnlPct = ((curPrice - pos.entryPriceUSD) / pos.entryPriceUSD) * 100;
@@ -82,6 +85,11 @@ export function PositionsList({ positions, orders, history, prices, account, onC
                     {pos.symbol.replace('.NS','').replace('USDT','')}
                   </span>
                   <span className="badge badge-neutral" style={{ fontSize: 9 }}>LONG</span>
+                  {usingLast && (
+                    <span className="badge" style={{ fontSize: 9, color: 'var(--text-muted)', borderColor: 'var(--border-mid)' }}>
+                      LAST{pos.lastPxTs ? ` ${new Date(pos.lastPxTs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
                   {pos.opt

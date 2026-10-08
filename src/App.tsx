@@ -217,6 +217,7 @@ export default function App() {
   // ── Option contract live prices (bridge chain polling) ──────────────────
   // Feeds held contracts into the same prices map, so MTM, limit orders,
   // SL/TP and equity all work with zero engine changes.
+  const lastStampRef = useRef(0);
   useEffect(() => {
     const optPositions = engine.positions.filter(p => p.opt);
     if (!optPositions.length) return;
@@ -249,6 +250,14 @@ export default function App() {
         engine.checkLimitOrders(
           Object.fromEntries(Object.entries(updates).map(([s, v]) => [s, toUSD(v, s)]))
         );
+        // Persist lasts (throttled): MTM survives restarts, labeled LAST.
+        const now = Date.now();
+        if (now - lastStampRef.current > 120_000) {
+          lastStampRef.current = now;
+          const stamped: Record<string, { price: number; ts: number }> = {};
+          for (const [s, v] of Object.entries(updates)) stamped[s] = { price: v, ts: now };
+          engine.stampOptionPrices(stamped);
+        }
       }
     };
     poll();

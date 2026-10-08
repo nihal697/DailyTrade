@@ -9,6 +9,43 @@ export const UNDERLYING_YAHOO: Record<OptionUnderlying, string> = {
   SENSEX: '^BSESN',
 };
 
+const UNDERLYING_EXCHANGE: Record<OptionUnderlying, string> = {
+  NIFTY: 'NFO',
+  BANKNIFTY: 'NFO',
+  SENSEX: 'BFO',
+};
+
+export interface DayRange {
+  high: number;
+  low: number;
+  volume: number;
+}
+
+/** Today's range for one contract, from Angel history via the bridge. */
+export async function fetchOptionDayRange(underlying: OptionUnderlying,
+                                          token?: string): Promise<DayRange | null> {
+  if (!token) return null;
+  const base = getBridgeUrl();
+  if (!base) return null;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  try {
+    const res = await fetch(
+      `${base}/history?exchange=${UNDERLYING_EXCHANGE[underlying]}&token=${token}` +
+      `&interval=ONE_DAY&frm=${day}%2000:00&to=${day}%2023:59`,
+      { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const rows = Array.isArray(j?.candles) ? j.candles : [];
+    const today = rows[rows.length - 1];
+    if (!today) return null;
+    return { high: today.high, low: today.low, volume: today.volume ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
 export interface ChainLeg {
   token?: string;
   ltp: number | null;

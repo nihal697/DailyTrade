@@ -29,6 +29,8 @@ export interface Position {
   entryPriceUSD: number;
   entryTime: number;
   opt?: OptionLeg; // set for option contracts (long CE/PE)
+  lastPx?: number;  // last seen live price, native quote (options keep MTM across restarts)
+  lastPxTs?: number;
 }
 
 export type OptionUnderlying = 'NIFTY' | 'BANKNIFTY' | 'SENSEX';
