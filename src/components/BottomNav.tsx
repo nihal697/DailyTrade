@@ -1,10 +1,11 @@
-import { TrendingUp, BarChart2, Layers, User } from 'lucide-react';
+import { TrendingUp, BarChart2, Layers, User, LayoutGrid } from 'lucide-react';
 
-type Tab = 'trade' | 'markets' | 'portfolio' | 'accounts';
+type Tab = 'trade' | 'markets' | 'options' | 'portfolio' | 'accounts';
 
 const TABS: { key: Tab; icon: typeof TrendingUp; label: string }[] = [
   { key: 'trade',     icon: TrendingUp, label: 'TRADE'     },
   { key: 'markets',   icon: BarChart2,  label: 'MARKETS'   },
+  { key: 'options',   icon: LayoutGrid, label: 'OPTIONS'   },
   { key: 'portfolio', icon: Layers,     label: 'PORTFOLIO' },
   { key: 'accounts',  icon: User,       label: 'ACCOUNTS'  },
 ];

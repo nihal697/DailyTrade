@@ -18,6 +18,7 @@ export interface Order {
   status: OrderStatus;
   createdAt: number;
   filledAt?: number;
+  opt?: OptionLeg;         // set for option limit orders — carried onto the filled position
 }
 
 export interface Position {
@@ -27,6 +28,20 @@ export interface Position {
   quantity: number;
   entryPriceUSD: number;
   entryTime: number;
+  opt?: OptionLeg; // set for option contracts (long CE/PE)
+}
+
+export type OptionUnderlying = 'NIFTY' | 'BANKNIFTY' | 'SENSEX';
+export type OptionType = 'CE' | 'PE';
+
+export interface OptionLeg {
+  underlying: OptionUnderlying;
+  strike: number;
+  optType: OptionType;
+  expiry: string;     // YYYY-MM-DD
+  lotSize: number;
+  lots: number;       // quantity = lots * lotSize
+  token: string;      // broker token for live LTP
 }
 
 export interface ClosedTrade {

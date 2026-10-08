@@ -76,7 +76,9 @@ export function PositionsList({ positions, orders, history, prices, account, onC
                   <span className="badge badge-neutral" style={{ fontSize: 9 }}>LONG</span>
                 </div>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
-                  {pos.quantity.toFixed(pos.quantity < 1 ? 6 : 4)} units @ {formatAssetPrice(pos.entryPriceUSD, pos.symbol)}
+                  {pos.opt
+                    ? `${pos.opt.lots} lot${pos.opt.lots > 1 ? 's' : ''} · ${pos.opt.optType} ${pos.opt.strike.toLocaleString('en-US')} · exp ${pos.opt.expiry} @ ${formatAssetPrice(pos.entryPriceUSD, pos.symbol)}`
+                    : `${pos.quantity.toFixed(pos.quantity < 1 ? 6 : 4)} units @ ${formatAssetPrice(pos.entryPriceUSD, pos.symbol)}`}
                 </span>
               </div>
               <div className="col" style={{ alignItems: 'flex-end', gap: 2 }}>

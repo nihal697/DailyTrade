@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { loadState, saveState, formatCurrency, type AppState } from '../services/storage';
 import { triggerAutoBackup } from '../services/backupService';
 import type { Currency } from '../types/account';
-import type { Position, ClosedTrade, Order } from '../types/trade';
+import type { Position, ClosedTrade, Order, OptionLeg } from '../types/trade';
 import { formatAssetPrice } from '../utils/formatPrice';
 
 export type NotificationCallback = (title: string, message: string, type: 'success' | 'error' | 'info') => void;
@@ -67,7 +67,8 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
     quantity: number,
     priceUSD: number,
     stopLoss?: number,
-    takeProfit?: number
+    takeProfit?: number,
+    opt?: OptionLeg
   ): string | null => {
     const cost = priceUSD * quantity;
     if (cost > activeAccount.cashUSD) return 'Insufficient cash';
@@ -83,6 +84,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
         quantity,
         entryPriceUSD: priceUSD,
         entryTime: Date.now(),
+        ...(opt ? { opt } : {}),
       };
       // Attach SL/TP as pending orders if given
       const newOrders: Order[] = [];
@@ -146,7 +148,8 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
 
   // ── Limit Order ───────────────────────────────────────────────────────────
   const placeLimitOrder = useCallback((
-    symbol: string, side: 'buy' | 'sell', quantity: number, limitPrice: number
+    symbol: string, side: 'buy' | 'sell', quantity: number, limitPrice: number,
+    opt?: OptionLeg
   ): string | null => {
     if (side === 'buy') {
       const cost = limitPrice * quantity;
@@ -159,6 +162,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
         accountId: prev.activeAccountId,
         symbol, side, type: 'limit', quantity, limitPrice,
         status: 'pending', createdAt: Date.now(),
+        ...(opt ? { opt } : {}),
       }],
     }));
     onNotify?.('Limit Order Placed', `${side.toUpperCase()} ${quantity} ${symbol} @ ${formatAssetPrice(limitPrice, symbol)}`, 'info');
@@ -200,6 +204,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
               id: crypto.randomUUID(), accountId: order.accountId,
               symbol: order.symbol, quantity: order.quantity,
               entryPriceUSD: price, entryTime: Date.now(),
+              ...(order.opt ? { opt: order.opt } : {}),
             }],
             orders: updated.orders.map(o => o.id === order.id ? { ...o, status: 'filled' as const, filledAt: Date.now(), filledPrice: price } : o),
           };
@@ -243,6 +248,44 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
         }
       }
       return updated;
+    });
+  }, [setState, onNotify]);
+
+  // ── Expired option settlement (European cash-settled) ─────────────────────
+  // intrinsic = max(0, (spot-strike)) for CE, max(0, (strike-spot)) for PE,
+  // times quantity. Worthless expiries close at zero with an explicit note.
+  const settleOptionExpiry = useCallback((positionId: string, intrinsicPerUnit: number): void => {
+    setState(prev => {
+      const pos = prev.positions.find(p => p.id === positionId);
+      if (!pos || !pos.opt) return prev;
+      const proceeds = Math.max(0, intrinsicPerUnit) * pos.quantity;
+      const pnl = proceeds - pos.entryPriceUSD * pos.quantity;
+      const trade: ClosedTrade = {
+        id: crypto.randomUUID(),
+        accountId: pos.accountId,
+        symbol: pos.symbol,
+        quantity: pos.quantity,
+        entryPriceUSD: pos.entryPriceUSD,
+        exitPriceUSD: Math.max(0, intrinsicPerUnit),
+        realizedPnLUSD: pnl,
+        entryTime: pos.entryTime,
+        exitTime: Date.now(),
+      };
+      const acc = prev.accounts.find(a => a.id === pos.accountId) ?? prev.accounts[0];
+      onNotify?.(
+        proceeds > 0 ? 'Option Expired ITM' : 'Option Expired Worthless',
+        `${pos.symbol}: ${pnl >= 0 ? '+' : ''}${formatCurrency(pnl, acc.currency)}`,
+        proceeds > 0 ? 'success' : 'error'
+      );
+      return {
+        ...prev,
+        accounts: prev.accounts.map(a =>
+          a.id === pos.accountId ? { ...acc, cashUSD: acc.cashUSD + proceeds } : a
+        ),
+        positions: prev.positions.filter(p => p.id !== positionId),
+        orders: prev.orders.filter(o => o.symbol !== pos.symbol),
+        history: [trade, ...prev.history].slice(0, 500),
+      };
     });
   }, [setState, onNotify]);
 
@@ -324,6 +367,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
     state, activeAccount, positions, orders, history,
     calcUnrealisedPnL, calcEquity, recordEquity,
     marketBuy, closePosition, placeLimitOrder, cancelOrder, checkLimitOrders,
+    settleOptionExpiry,
     createAccount, switchAccount, topUpAccount, resetAccount, deleteAccount, updateAccountCurrency,
     replaceState,
   };

@@ -11,6 +11,8 @@ import { PositionsList }    from './components/PositionsList';
 import { PortfolioChart }   from './components/PortfolioChart';
 import { PortfolioBreakdown } from './components/PortfolioBreakdown';
 import { AssetDetail }      from './components/AssetDetail';
+import { ChainView, type TradeLeg } from './components/ChainView';
+import { OptionTicket }    from './components/OptionTicket';
 import { AccountModal }     from './components/AccountModal';
 import { ExportModal }      from './components/ExportModal';
 import { ImportModal }      from './components/ImportModal';
@@ -24,6 +26,7 @@ import {
   fetchBinanceCandles, fetchCandles, fetchYahooQuote, isMarketOpen,
   subscribeLiveQuote, subscribeAllQuotes, startSyntheticTicks,
 } from './services/marketData';
+import { fetchOptionChain, makeOptionSymbol, UNDERLYING_YAHOO } from './services/optionChain';
 import type { Candle } from './types/market';
 import { Info, Download } from 'lucide-react';
 import { formatAssetPrice } from './utils/formatPrice';
@@ -51,6 +54,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [showTradeModal, setShowTradeModal] = useState(false);
+  const [ticketLeg, setTicketLeg] = useState<TradeLeg | null>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -195,6 +199,85 @@ export default function App() {
     engine.checkLimitOrders({ [selectedAsset.symbol]: livePrice });
   }, [livePrice, selectedAsset]);
 
+  // ── Option contract live prices (bridge chain polling) ──────────────────
+  // Feeds held contracts into the same prices map, so MTM, limit orders,
+  // SL/TP and equity all work with zero engine changes.
+  useEffect(() => {
+    const optPositions = engine.positions.filter(p => p.opt);
+    if (!optPositions.length) return;
+    let cancelled = false;
+    const poll = async () => {
+      const byKey = new Map<string, typeof optPositions>();
+      for (const p of optPositions) {
+        const k = `${p.opt!.underlying}|${p.opt!.expiry}`;
+        if (!byKey.has(k)) byKey.set(k, []);
+        byKey.get(k)!.push(p);
+      }
+      const updates: Record<string, number> = {};
+      for (const group of byKey.values()) {
+        if (cancelled) return;
+        const chain = await fetchOptionChain(group[0].opt!.underlying, group[0].opt!.expiry).catch(() => null);
+        if (!chain || cancelled) continue;
+        const byToken = new Map<string, number>();
+        for (const s of chain.strikes) {
+          if (s.ce.ltp != null) byToken.set(String(s.ce.token), s.ce.ltp);
+          if (s.pe.ltp != null) byToken.set(String(s.pe.token), s.pe.ltp);
+        }
+        for (const p of group) {
+          const px = byToken.get(p.opt!.token);
+          if (px != null) updates[makeOptionSymbol(p.opt!.underlying, p.opt!.strike, p.opt!.optType, p.opt!.expiry)] = px;
+        }
+      }
+      if (cancelled) return;
+      if (Object.keys(updates).length) {
+        handlePricesUpdate(updates);
+        engine.checkLimitOrders(updates);
+      }
+    };
+    poll();
+    const id = setInterval(poll, 10_000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.positions.map(p => p.id).join(',')]);
+
+  // ── Expired option settlement (European cash-settled at expiry close) ───
+  useEffect(() => {
+    let cancelled = false;
+    const settle = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const expired = engine.positions.filter(p => p.opt && p.opt.expiry < today);
+      if (!expired.length) return;
+      const byUnderlying = new Map<string, typeof expired>();
+      for (const p of expired) {
+        const u = p.opt!.underlying;
+        if (!byUnderlying.has(u)) byUnderlying.set(u, []);
+        byUnderlying.get(u)!.push(p);
+      }
+      for (const [u, group] of byUnderlying) {
+        if (cancelled) return;
+        let closes: { time: number; close: number }[] = [];
+        try {
+          closes = await fetchCandles(UNDERLYING_YAHOO[u as keyof typeof UNDERLYING_YAHOO], '1D');
+        } catch { continue; }
+        for (const p of group) {
+          if (cancelled) return;
+          const day = closes
+            .filter(c => new Date(c.time * 1000).toISOString().slice(0, 10) <= p.opt!.expiry)
+            .sort((a, b) => b.time - a.time)[0];
+          if (!day) continue; // no expiry-day data yet — try next run
+          const intrinsic = p.opt!.optType === 'CE'
+            ? Math.max(0, day.close - p.opt!.strike)
+            : Math.max(0, p.opt!.strike - day.close);
+          engine.settleOptionExpiry(p.id, intrinsic);
+        }
+      }
+    };
+    settle();
+    const id = setInterval(settle, 5 * 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.positions.map(p => p.id).join(',')]);
+
   // Record equity snapshot every 30 seconds
   const equityTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
@@ -211,6 +294,23 @@ export default function App() {
   const handleSelectAsset = (asset: Asset) => {
     setSelectedAsset(asset);
     setTab('trade');
+  };
+
+  // ── Option buy (long CE/PE only in v1; exit via Portfolio, auto-settle at expiry)
+  const handleBuyOption = (leg: TradeLeg, lots: number, price: number,
+                           type: 'market' | 'limit', limitPrice?: number): string | null => {
+    const symbol = makeOptionSymbol(leg.underlying, leg.strike, leg.optType, leg.expiry);
+    const qty = lots * leg.lotSize;
+    const opt = {
+      underlying: leg.underlying, strike: leg.strike, optType: leg.optType,
+      expiry: leg.expiry, lotSize: leg.lotSize, lots, token: leg.token ?? '',
+    };
+    if (type === 'market') {
+      if (!(price > 0)) return 'No live premium yet — wait for a tick.';
+      return engine.marketBuy(symbol, qty, price, undefined, undefined, opt);
+    }
+    if (!(limitPrice && limitPrice > 0)) return 'Enter a limit premium.';
+    return engine.placeLimitOrder(symbol, 'buy', qty, limitPrice, opt);
   };
 
   const handleImport = (s: AppState) => {
@@ -367,6 +467,11 @@ export default function App() {
           />
         )}
 
+        {/* OPTIONS TAB */}
+        {tab === 'options' && (
+          <ChainView onTradeLeg={setTicketLeg} />
+        )}
+
         {/* PORTFOLIO TAB */}
         {tab === 'portfolio' && (
           <div className="col" style={{ height: '100%', overflowY: 'auto' }}>
@@ -419,6 +524,16 @@ export default function App() {
           onMarketBuy={(qty, sl, tp) => engine.marketBuy(selectedAsset.symbol, qty, curPrice, sl, tp)}
           onLimitOrder={(side, qty, price) => engine.placeLimitOrder(selectedAsset.symbol, side, qty, price)}
           onClose={() => setShowTradeModal(false)}
+        />
+      )}
+
+      {/* ── Option Ticket Modal ─────────────────────────────────────────── */}
+      {ticketLeg && (
+        <OptionTicket
+          leg={ticketLeg}
+          onBuy={(lots, price, type, limitPrice) =>
+            handleBuyOption(ticketLeg, lots, price, type, limitPrice)}
+          onClose={() => setTicketLeg(null)}
         />
       )}
 

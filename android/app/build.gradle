@@ -7,8 +7,8 @@ android {
         applicationId "com.dailytrade.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.0.5"
+        versionCode 4
+        versionName "1.0.6"
         // Ship only English + Hindi resources (appcompat et al bundle dozens).
         resConfigs "en", "hi"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

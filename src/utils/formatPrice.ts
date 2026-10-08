@@ -11,6 +11,9 @@ export function getAssetCurrencyFormat(symbol: string): CurrencyFormat {
   if (symbol.startsWith('^NSE') || symbol.startsWith('^BSE')) {
     return { prefix: '₹', suffix: '', decimals: 2 }; // NSE/BSE index symbols
   }
+  if (symbol === 'OPT' || /\b(CE|PE)\b/.test(symbol)) {
+    return { prefix: '₹', suffix: '', decimals: 2 }; // option contracts
+  }
   if (symbol.includes('^TNX') || symbol.includes('^TYX') || symbol.includes('^IRX')) {
     return { prefix: '', suffix: '%', decimals: 2 };
   }
