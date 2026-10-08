@@ -2,6 +2,7 @@ import type { Position } from '../types/trade';
 import type { Account } from '../types/account';
 import { ASSET_MAP } from '../data/assets';
 import { formatCurrency } from '../services/storage';
+import { toUSD } from '../services/marketData';
 import { PieChart, DollarSign, Bitcoin, Building2, Flame, Layers, Landmark } from 'lucide-react';
 
 interface Props {
@@ -33,8 +34,9 @@ export function PortfolioBreakdown({ positions, prices, account, totalEquityUSD 
   };
 
   for (const pos of positions) {
-    const curPrice = prices[pos.symbol] ?? pos.entryPriceUSD;
-    const value = curPrice * pos.quantity;
+    const live = prices[pos.symbol];
+    const curUSD = live != null ? toUSD(live, pos.symbol) : pos.entryPriceUSD;
+    const value = curUSD * pos.quantity;
     const asset = ASSET_MAP[pos.symbol];
     const assetClass = asset?.class || 'crypto';
     classTotals[assetClass] = (classTotals[assetClass] || 0) + value;

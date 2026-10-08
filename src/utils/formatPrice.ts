@@ -4,15 +4,18 @@ export interface CurrencyFormat {
   decimals: number;
 }
 
+/** True when an asset's native quotes are in rupees (engine converts to USD). */
+export function isINRAsset(symbol: string): boolean {
+  return symbol.endsWith('.NS')
+      || symbol.startsWith('^NSE')
+      || symbol.startsWith('^BSE')
+      || symbol === 'OPT'
+      || /\b(CE|PE)\b/.test(symbol);
+}
+
 export function getAssetCurrencyFormat(symbol: string): CurrencyFormat {
-  if (symbol.endsWith('.NS')) {
-    return { prefix: '₹', suffix: '', decimals: 2 };
-  }
-  if (symbol.startsWith('^NSE') || symbol.startsWith('^BSE')) {
-    return { prefix: '₹', suffix: '', decimals: 2 }; // NSE/BSE index symbols
-  }
-  if (symbol === 'OPT' || /\b(CE|PE)\b/.test(symbol)) {
-    return { prefix: '₹', suffix: '', decimals: 2 }; // option contracts
+  if (isINRAsset(symbol)) {
+    return { prefix: '₹', suffix: '', decimals: 2 }; // NSE/BSE equities, indices, options
   }
   if (symbol.includes('^TNX') || symbol.includes('^TYX') || symbol.includes('^IRX')) {
     return { prefix: '', suffix: '%', decimals: 2 };

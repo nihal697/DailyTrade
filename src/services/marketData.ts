@@ -1,5 +1,44 @@
 import type { Quote, Candle, Timeframe, AngelId } from '../types/market';
 import { BINANCE_SYMBOLS, ASSETS } from '../data/assets';
+import { isINRAsset } from '../utils/formatPrice';
+
+// ─── USD/INR for the engine (engine math is USD-true; INR prices convert) ────
+const FX_KEY = 'dailytrade_usdinr';
+let usdInr: number | null = (() => {
+  try {
+    const v = parseFloat(localStorage.getItem(FX_KEY) ?? '');
+    return v > 0 ? v : null;
+  } catch { return null; }
+})();
+
+export async function refreshUsdInr(): Promise<number | null> {
+  try {
+    const res = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/USDINR=X?interval=1d&range=1d',
+      { signal: AbortSignal.timeout(8000) });
+    const meta = (await res.json())?.chart?.result?.[0]?.meta;
+    const px = meta?.regularMarketPrice;
+    if (typeof px === 'number' && px > 0) {
+      usdInr = px;
+      try { localStorage.setItem(FX_KEY, String(px)); } catch { /* ignore */ }
+      return px;
+    }
+  } catch { /* keep last known */ }
+  return usdInr;
+}
+
+/** Native quote -> engine USD. Non-INR passes through untouched. */
+export function toUSD(price: number, symbol: string): number {
+  if (!isINRAsset(symbol)) return price;
+  const rate = usdInr ?? 88; // last resort only (Yahoo down + no cache): near-enough, replaced on first fetch
+  return price / rate;
+}
+
+/** Engine USD -> native quote for display/notifications. */
+export function fromUSD(usdPrice: number, symbol: string): number {
+  if (!isINRAsset(symbol)) return usdPrice;
+  const rate = usdInr ?? 88;
+  return usdPrice * rate;
+}
 
 // ─── Angel Bridge (personal SmartAPI feed for Nifty/BankNifty/Sensex) ─────────
 // The bridge URL is the only thing stored in-app — no broker secrets, ever.

@@ -4,6 +4,7 @@ import { triggerAutoBackup } from '../services/backupService';
 import type { Currency } from '../types/account';
 import type { Position, ClosedTrade, Order, OptionLeg } from '../types/trade';
 import { formatAssetPrice } from '../utils/formatPrice';
+import { fromUSD } from '../services/marketData';
 
 export type NotificationCallback = (title: string, message: string, type: 'success' | 'error' | 'info') => void;
 
@@ -105,7 +106,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
         orders: [...prev.orders, ...newOrders],
       };
     });
-    onNotify?.('Order Executed', `Bought ${quantity} ${symbol} @ ${formatAssetPrice(priceUSD, symbol)}`, 'success');
+    onNotify?.('Order Executed', `Bought ${quantity} ${symbol} @ ${formatAssetPrice(fromUSD(priceUSD, symbol), symbol)}`, 'success');
     return null;
   }, [activeAccount, setState, onNotify]);
 
@@ -165,7 +166,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
         ...(opt ? { opt } : {}),
       }],
     }));
-    onNotify?.('Limit Order Placed', `${side.toUpperCase()} ${quantity} ${symbol} @ ${formatAssetPrice(limitPrice, symbol)}`, 'info');
+    onNotify?.('Limit Order Placed', `${side.toUpperCase()} ${quantity} ${symbol} @ ${formatAssetPrice(fromUSD(limitPrice, symbol), symbol)}`, 'info');
     return null;
   }, [activeAccount, setState, onNotify]);
 
@@ -208,7 +209,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
             }],
             orders: updated.orders.map(o => o.id === order.id ? { ...o, status: 'filled' as const, filledAt: Date.now(), filledPrice: price } : o),
           };
-          onNotify?.('Limit Buy Filled', `Bought ${order.quantity} ${order.symbol} @ ${formatAssetPrice(price, order.symbol)}`, 'success');
+          onNotify?.('Limit Buy Filled', `Bought ${order.quantity} ${order.symbol} @ ${formatAssetPrice(fromUSD(price, order.symbol), order.symbol)}`, 'success');
         } else {
           // sell — find matching position
           const pos = updated.positions.find(p => p.symbol === order.symbol && p.accountId === order.accountId);
@@ -242,7 +243,7 @@ export function useTradingEngine(onNotify?: NotificationCallback) {
           };
           onNotify?.(
             pnl >= 0 ? 'Target Reached (Profit)' : 'Stop Loss Triggered',
-            `Sold ${fillQty} ${order.symbol} @ ${formatAssetPrice(price, order.symbol)} (${pnl >= 0 ? '+' : ''}${formatCurrency(pnl, curr)})`,
+            `Sold ${fillQty} ${order.symbol} @ ${formatAssetPrice(fromUSD(price, order.symbol), order.symbol)} (${pnl >= 0 ? '+' : ''}${formatCurrency(pnl, curr)})`,
             pnl >= 0 ? 'success' : 'error'
           );
         }

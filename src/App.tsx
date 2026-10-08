@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import './index.css';
 
 import { useTradingEngine } from './hooks/useTradingEngine';
@@ -25,6 +25,7 @@ import { checkAndAutoRestore } from './services/backupService';
 import {
   fetchBinanceCandles, fetchCandles, fetchYahooQuote, isMarketOpen,
   subscribeLiveQuote, subscribeAllQuotes, startSyntheticTicks,
+  toUSD, fromUSD, refreshUsdInr,
 } from './services/marketData';
 import { fetchOptionChain, makeOptionSymbol, UNDERLYING_YAHOO } from './services/optionChain';
 import type { Candle } from './types/market';
@@ -150,6 +151,20 @@ export default function App() {
     return unsub;
   }, [handlePricesUpdate]);
 
+  // FX rate for the engine (engine math is USD-true; display stays native)
+  useEffect(() => {
+    refreshUsdInr();
+    const id = setInterval(refreshUsdInr, 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Engine always eats USD; display keeps native quotes.
+  const pricesUSD = useMemo(
+    () => Object.fromEntries(Object.entries(prices).map(([s, p]) => [s, toUSD(p, s)])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [prices]
+  );
+
   // Subscribe live price for selected asset
   useEffect(() => {
     const isCrypto = selectedAsset.class === 'crypto';
@@ -182,7 +197,7 @@ export default function App() {
           if (cancelled) return;
           setLivePrice(price);
           handlePricesUpdate({ [selectedAsset.symbol]: price });
-          engine.checkLimitOrders({ [selectedAsset.symbol]: price });
+          engine.checkLimitOrders({ [selectedAsset.symbol]: toUSD(price, selectedAsset.symbol) });
         }, 1200);
       });
 
@@ -196,7 +211,7 @@ export default function App() {
   // Check limit orders on every crypto price update too
   useEffect(() => {
     if (!livePrice || !selectedAsset) return;
-    engine.checkLimitOrders({ [selectedAsset.symbol]: livePrice });
+    engine.checkLimitOrders({ [selectedAsset.symbol]: toUSD(livePrice, selectedAsset.symbol) });
   }, [livePrice, selectedAsset]);
 
   // ── Option contract live prices (bridge chain polling) ──────────────────
@@ -231,7 +246,9 @@ export default function App() {
       if (cancelled) return;
       if (Object.keys(updates).length) {
         handlePricesUpdate(updates);
-        engine.checkLimitOrders(updates);
+        engine.checkLimitOrders(
+          Object.fromEntries(Object.entries(updates).map(([s, v]) => [s, toUSD(v, s)]))
+        );
       }
     };
     poll();
@@ -268,7 +285,7 @@ export default function App() {
           const intrinsic = p.opt!.optType === 'CE'
             ? Math.max(0, day.close - p.opt!.strike)
             : Math.max(0, p.opt!.strike - day.close);
-          engine.settleOptionExpiry(p.id, intrinsic);
+          engine.settleOptionExpiry(p.id, toUSD(intrinsic, UNDERLYING_YAHOO[u as keyof typeof UNDERLYING_YAHOO]));
         }
       }
     };
@@ -282,13 +299,13 @@ export default function App() {
   const equityTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     equityTimerRef.current = setInterval(() => {
-      engine.recordEquity(prices);
+      engine.recordEquity(pricesUSD);
     }, 30_000);
     return () => clearInterval(equityTimerRef.current!);
-  }, [prices, engine.recordEquity]);
+  }, [pricesUSD, engine.recordEquity]);
 
-  const totalEquityUSD = engine.calcEquity(prices);
-  const unrPnLUSD = engine.calcUnrealisedPnL(prices);
+  const totalEquityUSD = engine.calcEquity(pricesUSD);
+  const unrPnLUSD = engine.calcUnrealisedPnL(pricesUSD);
   const curPrice = livePrice ?? prices[selectedAsset.symbol] ?? 0;
 
   const handleSelectAsset = (asset: Asset) => {
@@ -307,10 +324,10 @@ export default function App() {
     };
     if (type === 'market') {
       if (!(price > 0)) return 'No live premium yet — wait for a tick.';
-      return engine.marketBuy(symbol, qty, price, undefined, undefined, opt);
+      return engine.marketBuy(symbol, qty, toUSD(price, symbol), undefined, undefined, opt);
     }
     if (!(limitPrice && limitPrice > 0)) return 'Enter a limit premium.';
-    return engine.placeLimitOrder(symbol, 'buy', qty, limitPrice, opt);
+    return engine.placeLimitOrder(symbol, 'buy', qty, toUSD(limitPrice, symbol), opt);
   };
 
   const handleImport = (s: AppState) => {
@@ -435,7 +452,7 @@ export default function App() {
                 return (
                   <div key={pos.id} className="row between" style={{ padding: '8px 10px', background: 'var(--bg-subtle)', border: '1px solid var(--border-dim)', marginTop: 8 }}>
                     <span className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                      LONG {pos.quantity.toFixed(pos.quantity < 1 ? 6 : 4)} @ {formatAssetPrice(pos.entryPriceUSD, pos.symbol)}
+                      LONG {pos.quantity.toFixed(pos.quantity < 1 ? 6 : 4)} @ {formatAssetPrice(fromUSD(pos.entryPriceUSD, pos.symbol), pos.symbol)}
                     </span>
                     <div className="row gap-2">
                       <span className="num font-bold" style={{ fontSize: 12, color: isUp ? 'var(--color-bull)' : 'var(--color-bear)' }}>
@@ -444,7 +461,7 @@ export default function App() {
                       <button
                         className="btn btn-bear"
                         style={{ fontSize: 10, padding: '3px 8px' }}
-                        onClick={() => engine.closePosition(pos.id, cur)}
+                        onClick={() => engine.closePosition(pos.id, toUSD(cur, pos.symbol))}
                       >
                         CLOSE
                       </button>
@@ -492,7 +509,10 @@ export default function App() {
               history={engine.history}
               prices={prices}
               account={engine.activeAccount}
-              onClosePosition={engine.closePosition}
+              onClosePosition={(id, price) => {
+            const pos = engine.positions.find(pp => pp.id === id);
+            engine.closePosition(id, pos ? toUSD(price, pos.symbol) : price);
+          }}
               onCancelOrder={engine.cancelOrder}
               onOpenAbout={() => { setAccountModalView('about'); setShowAccountModal(true); }}
             />
@@ -521,8 +541,8 @@ export default function App() {
           currentPrice={curPrice}
           account={engine.activeAccount}
           positionQty={engine.positions.find(p => p.symbol === selectedAsset.symbol)?.quantity}
-          onMarketBuy={(qty, sl, tp) => engine.marketBuy(selectedAsset.symbol, qty, curPrice, sl, tp)}
-          onLimitOrder={(side, qty, price) => engine.placeLimitOrder(selectedAsset.symbol, side, qty, price)}
+          onMarketBuy={(qty, sl, tp) => engine.marketBuy(selectedAsset.symbol, qty, toUSD(curPrice, selectedAsset.symbol), sl == null ? sl : toUSD(sl, selectedAsset.symbol), tp == null ? tp : toUSD(tp, selectedAsset.symbol))}
+          onLimitOrder={(side, qty, price) => engine.placeLimitOrder(selectedAsset.symbol, side, qty, toUSD(price, selectedAsset.symbol))}
           onClose={() => setShowTradeModal(false)}
         />
       )}

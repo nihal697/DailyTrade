@@ -3,6 +3,7 @@ import type { Position, ClosedTrade, Order } from '../types/trade';
 import type { Account } from '../types/account';
 import { formatCurrency, formatPct } from '../services/storage';
 import { formatAssetPrice } from '../utils/formatPrice';
+import { toUSD, fromUSD } from '../services/marketData';
 import { ASSET_MAP } from '../data/assets';
 
 interface Props {
@@ -17,9 +18,15 @@ interface Props {
 }
 
 export function PositionsList({ positions, orders, history, prices, account, onClosePosition, onCancelOrder, onOpenAbout }: Props) {
+  // prices map is native quotes; engine + stored entries are USD-true.
+  const usd = (symbol: string): number => {
+    const pos = positions.find(pp => pp.symbol === symbol);
+    const live = prices[symbol];
+    if (live != null) return toUSD(live, symbol);
+    return pos ? pos.entryPriceUSD : 0;
+  };
   const totalUnrPnL = positions.reduce((sum, p) => {
-    const cur = prices[p.symbol] ?? p.entryPriceUSD;
-    return sum + (cur - p.entryPriceUSD) * p.quantity;
+    return sum + (usd(p.symbol) - p.entryPriceUSD) * p.quantity;
   }, 0);
   const totalRealPnL = history.reduce((sum, h) => sum + h.realizedPnLUSD, 0);
   const winTrades = history.filter(h => h.realizedPnLUSD > 0).length;
@@ -59,7 +66,8 @@ export function PositionsList({ positions, orders, history, prices, account, onC
         </div>
       )}
       {positions.map(pos => {
-        const curPrice = prices[pos.symbol] ?? pos.entryPriceUSD;
+        const curNative = prices[pos.symbol] ?? fromUSD(pos.entryPriceUSD, pos.symbol);
+        const curPrice = toUSD(curNative, pos.symbol);
         const pnlUSD = (curPrice - pos.entryPriceUSD) * pos.quantity;
         const pnlPct = ((curPrice - pos.entryPriceUSD) / pos.entryPriceUSD) * 100;
         const isUp = pnlUSD >= 0;
@@ -77,8 +85,8 @@ export function PositionsList({ positions, orders, history, prices, account, onC
                 </div>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
                   {pos.opt
-                    ? `${pos.opt.lots} lot${pos.opt.lots > 1 ? 's' : ''} · ${pos.opt.optType} ${pos.opt.strike.toLocaleString('en-US')} · exp ${pos.opt.expiry} @ ${formatAssetPrice(pos.entryPriceUSD, pos.symbol)}`
-                    : `${pos.quantity.toFixed(pos.quantity < 1 ? 6 : 4)} units @ ${formatAssetPrice(pos.entryPriceUSD, pos.symbol)}`}
+                    ? `${pos.opt.lots} lot${pos.opt.lots > 1 ? 's' : ''} · ${pos.opt.optType} ${pos.opt.strike.toLocaleString('en-US')} · exp ${pos.opt.expiry} @ ${formatAssetPrice(fromUSD(pos.entryPriceUSD, pos.symbol), pos.symbol)}`
+                    : `${pos.quantity.toFixed(pos.quantity < 1 ? 6 : 4)} units @ ${formatAssetPrice(fromUSD(pos.entryPriceUSD, pos.symbol), pos.symbol)}`}
                 </span>
               </div>
               <div className="col" style={{ alignItems: 'flex-end', gap: 2 }}>
@@ -104,7 +112,7 @@ export function PositionsList({ positions, orders, history, prices, account, onC
             </div>
             <div className="row between">
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
-                Current: {formatAssetPrice(curPrice, pos.symbol)}
+                Current: {formatAssetPrice(curNative, pos.symbol)}
               </span>
               <button
                 className="btn btn-bear"
