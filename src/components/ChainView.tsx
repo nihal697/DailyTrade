@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatAssetPrice } from '../utils/formatPrice';
 import {
   OPTION_UNDERLYINGS, fetchOptionExpiries, fetchOptionChain, bridgeConfigured,
@@ -69,6 +69,19 @@ export function ChainView({ onTradeLeg }: Props) {
   const atm = chain?.spot != null && chain.strikes.length
     ? chain.strikes.reduce((a, b) => Math.abs(b.strike - chain.spot!) < Math.abs(a.strike - chain.spot!) ? b : a)
     : null;
+
+  // Jump to the ATM row on underlying/expiry change — the list opens at the
+  // top (deep OTM) otherwise, and those rows can never have ticks by design.
+  const scrolledKey = useRef('');
+  useEffect(() => {
+    if (!chain || !atm) return;
+    const key = `${underlying}|${expiry}`;
+    if (scrolledKey.current === key) return;
+    scrolledKey.current = key;
+    requestAnimationFrame(() => {
+      document.getElementById(`opt-row-${atm.strike}`)?.scrollIntoView({ block: 'center' });
+    });
+  }, [chain, atm, underlying, expiry]);
 
   const cell = (s: ChainStrike, side: 'ce' | 'pe') => {
     const leg = s[side];
@@ -147,7 +160,7 @@ export function ChainView({ onTradeLeg }: Props) {
         {chain?.strikes.map(s => {
           const isAtm = atm?.strike === s.strike;
           return (
-            <div key={s.strike} className="row" style={{
+            <div key={s.strike} id={`opt-row-${s.strike}`} className="row" style={{
               gap: 6, alignItems: 'center',
               background: isAtm ? 'rgba(255,255,255,0.05)' : 'transparent',
               border: isAtm ? '1px solid var(--border-mid)' : '1px solid transparent',
