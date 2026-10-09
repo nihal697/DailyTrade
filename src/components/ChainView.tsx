@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatAssetPrice } from '../utils/formatPrice';
+import { fetchYahooQuote } from '../services/marketData';
 import {
-  OPTION_UNDERLYINGS, fetchOptionExpiries, fetchOptionChain, bridgeConfigured,
+  OPTION_UNDERLYINGS, UNDERLYING_YAHOO, fetchOptionExpiries, fetchOptionChain, bridgeConfigured,
   type ChainData, type ChainStrike,
 } from '../services/optionChain';
 import type { OptionUnderlying, OptionType } from '../types/trade';
@@ -70,16 +71,50 @@ export function ChainView({ onTradeLeg }: Props) {
     ? chain.strikes.reduce((a, b) => Math.abs(b.strike - chain.spot!) < Math.abs(a.strike - chain.spot!) ? b : a)
     : null;
 
+  // Spot day-change vs Yahoo's official previous close (bridge serves ticks, not closes).
+  // Previous close barely moves intraday: fetch once per underlying per day.
+  const [spotChg, setSpotChg] = useState<number | null>(null);
+  const prevCloseRef = useRef<{ key: string; prev: number } | null>(null);
+  useEffect(() => {
+    if (chain?.spot == null) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `${underlying}|${today}`;
+    if (prevCloseRef.current?.key === key) {
+      const prev = prevCloseRef.current.prev;
+      if (prev > 0) setSpotChg(((chain.spot! - prev) / prev) * 100);
+      return;
+    }
+    let live = true;
+    fetchYahooQuote(UNDERLYING_YAHOO[underlying])
+      .then(q => {
+        if (!live || !q) return;
+        const prev = q.price - q.change;
+        if (prev > 0) {
+          prevCloseRef.current = { key, prev };
+          if (chain.spot != null) setSpotChg(((chain.spot - prev) / prev) * 100);
+        }
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [underlying, chain?.spot]);
+
+  const rowRefs = useRef(new Map<number, HTMLDivElement>());
+  const [pillTop, setPillTop] = useState<number | null>(null);
+
   // Jump to the ATM row on underlying/expiry change — the list opens at the
   // top (deep OTM) otherwise, and those rows can never have ticks by design.
+  // The floating spot pill is measured at the same ATM row on every refresh.
   const scrolledKey = useRef('');
   useEffect(() => {
-    if (!chain || !atm) return;
+    if (!chain || !atm) { setPillTop(null); return; }
     const key = `${underlying}|${expiry}`;
-    if (scrolledKey.current === key) return;
-    scrolledKey.current = key;
+    const fresh = scrolledKey.current !== key;
+    if (fresh) scrolledKey.current = key;
     requestAnimationFrame(() => {
-      document.getElementById(`opt-row-${atm.strike}`)?.scrollIntoView({ block: 'center' });
+      const el = rowRefs.current.get(atm.strike);
+      if (!el) return;
+      if (fresh) el.scrollIntoView({ block: 'center' });
+      setPillTop(el.offsetTop + el.offsetHeight / 2);
     });
   }, [chain, atm, underlying, expiry]);
 
@@ -176,11 +211,32 @@ export function ChainView({ onTradeLeg }: Props) {
         </p>
       )}
 
-      <div className="col" style={{ overflowY: 'auto', padding: '4px 8px 12px', gap: 4 }}>
+      <div className="col" style={{ position: 'relative', overflowY: 'auto', padding: '4px 8px 12px', gap: 4 }}>
+        {pillTop != null && chain?.spot != null && (
+          <div style={{
+            position: 'absolute', top: pillTop, left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: 5, pointerEvents: 'none', whiteSpace: 'nowrap',
+            background: '#000', border: '1px solid var(--border-mid)', borderRadius: 999,
+            padding: '5px 12px', fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700,
+          }}>
+            <span style={{ color: 'var(--text-primary)' }}>
+              {chain.spot.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+            </span>
+            {spotChg != null && (
+              <span style={{ color: spotChg >= 0 ? 'var(--color-bull)' : 'var(--color-bear)', marginLeft: 6 }}>
+                {spotChg >= 0 ? '▲' : '▼'}{Math.abs(spotChg).toFixed(2)}%
+              </span>
+            )}
+          </div>
+        )}
         {chain?.strikes.map(s => {
           const isAtm = atm?.strike === s.strike;
           return (
-            <div key={s.strike} id={`opt-row-${s.strike}`} className="row" style={{
+            <div
+              key={s.strike}
+              id={`opt-row-${s.strike}`}
+              ref={el => { if (el) rowRefs.current.set(s.strike, el); }}
+              className="row" style={{
               gap: 6, alignItems: 'center',
               background: isAtm ? 'rgba(255,255,255,0.05)' : 'transparent',
               border: isAtm ? '1px solid var(--border-mid)' : '1px solid transparent',
