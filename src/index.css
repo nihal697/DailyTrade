@@ -108,7 +108,7 @@ body {
 }
 
 .app-header {
-  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  min-height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
   padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid var(--border-dim);
   flex-shrink: 0;

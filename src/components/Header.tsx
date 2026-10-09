@@ -59,7 +59,7 @@ export function Header({ account, totalEquityUSD, unrPnLUSD, onOpenAccountModal,
         </span>
         <span
           className="mono text-xs"
-          style={{ color: isUp ? 'var(--color-bull)' : 'var(--color-bear)' }}
+          style={{ color: isUp ? 'var(--color-bull)' : 'var(--color-bear)', whiteSpace: 'nowrap' }}
         >
           {isUp ? '+' : ''}{formatCurrency(pnlUSD, account.currency, true)} ({isUp ? '+' : ''}{pnlPct.toFixed(1)}%)
         </span>
