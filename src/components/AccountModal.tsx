@@ -5,6 +5,7 @@ import { CURRENCIES } from '../types/account';
 import { formatCurrency, exportJSON, importJSON } from '../services/storage';
 import { getBridgeUrl, setBridgeUrl, testBridge } from '../services/marketData';
 import { getDirectCreds, testDirectLogin, clearDirectCreds } from '../services/angelDirect';
+import { keepAliveAvailable, keepAliveStart, keepAliveStop, keepAliveBatteryOk, keepAliveBatteryExempt, keepAliveRunning } from '../services/keepAlive';
 import type { AppState } from '../services/storage';
 
 interface Props {
@@ -44,8 +45,16 @@ export function AccountModal({
   const [dTotp, setDTotp] = useState('');
   const [directStatus, setDirectStatus] = useState('');
   const [directOn, setDirectOn] = useState(false);
+  const [watchOn, setWatchOn] = useState(false);
+  const [watchStatus, setWatchStatus] = useState('');
   useEffect(() => {
     getDirectCreds().then(c => setDirectOn(!!c)).catch(() => undefined);
+    if (keepAliveAvailable()) {
+      keepAliveRunning().then(setWatchOn).catch(() => undefined);
+      keepAliveBatteryOk().then(ok => {
+        if (!ok) setWatchStatus('Tip: battery is optimized for this app — tap BATTERY to unrestrict, or ticks may pause with the screen off.');
+      }).catch(() => undefined);
+    }
   }, []);
 
   const active = accounts.find(a => a.id === activeAccountId) ?? accounts[0];
@@ -102,6 +111,54 @@ export function AccountModal({
           </div>
 
           <div className="col gap-3">
+            {/* Market watch: foreground keep-alive for screen-off polling */}
+            <div style={{ padding: '14px', background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+              <div className="mono font-bold" style={{ fontSize: 12, color: '#c4b5fd', letterSpacing: '0.04em' }}>
+                MARKET WATCH {watchOn ? '· ON' : ''}
+              </div>
+              <p style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
+                Keeps the app alive with the screen off so quotes keep polling 9:15–15:30. Shows a persistent notification and uses more battery. Aggressive phone skins (Xiaomi, Oppo) can still kill it — nothing any app can do about that.
+              </p>
+              <div className="row gap-2" style={{ marginTop: 8 }}>
+                <button
+                  className="btn"
+                  style={{ flex: 1, padding: '8px 0', fontSize: 11 }}
+                  onClick={async () => {
+                    if (watchOn) {
+                      await keepAliveStop();
+                      setWatchOn(false);
+                      setWatchStatus('Market watch off.');
+                    } else {
+                      const ok = await keepAliveStart('DailyTrade paper feed — market hours');
+                      setWatchOn(ok);
+                      setWatchStatus(ok ? 'Running — check your notification shade.' : 'Could not start (web preview has no foreground services).');
+                    }
+                  }}
+                >
+                  {watchOn ? 'STOP WATCH' : 'START WATCH'}
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: '8px 12px', fontSize: 11 }}
+                  onClick={async () => {
+                    const ok = await keepAliveBatteryOk();
+                    if (ok) setWatchStatus('Battery already unrestricted for this app.');
+                    else {
+                      await keepAliveBatteryExempt();
+                      setWatchStatus('Opened battery settings — allow unrestricted, then come back.');
+                    }
+                  }}
+                >
+                  BATTERY
+                </button>
+              </div>
+              {watchStatus && (
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>
+                  {watchStatus}
+                </p>
+              )}
+            </div>
+
             {/* Broker direct: on-device Angel login, no server needed */}
             <div style={{ padding: '14px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
               <div className="mono font-bold" style={{ fontSize: 12, color: '#fcd34d', letterSpacing: '0.04em' }}>
