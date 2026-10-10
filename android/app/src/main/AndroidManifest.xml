@@ -25,6 +25,11 @@
 
         </activity>
 
+    <service
+        android:name=".KeepAliveService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -35,11 +40,6 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
     </application>
-
-    <service
-        android:name=".KeepAliveService"
-        android:exported="false"
-        android:foregroundServiceType="dataSync" />
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
