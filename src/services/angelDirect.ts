@@ -100,7 +100,8 @@ async function fullLogin(c: DirectCreds): Promise<string> {
 
 async function storedJwt(): Promise<string | null> {
   try {
-    return await SecureStorage.get(K.jwt);
+    const v = await SecureStorage.get(K.jwt);
+    return v == null ? null : String(v);
   } catch {
     return null;
   }
