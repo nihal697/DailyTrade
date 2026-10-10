@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, RefreshCw, Download, Upload, Check, ExternalLink, Heart, Info, Star, ShieldCheck, MessageSquare } from 'lucide-react';
 import type { Account, Currency } from '../types/account';
 import { CURRENCIES } from '../types/account';
 import { formatCurrency, exportJSON, importJSON } from '../services/storage';
 import { getBridgeUrl, setBridgeUrl, testBridge } from '../services/marketData';
+import { getDirectCreds, testDirectLogin, clearDirectCreds } from '../services/angelDirect';
 import type { AppState } from '../services/storage';
 
 interface Props {
@@ -37,6 +38,15 @@ export function AccountModal({
   const [error, setError] = useState('');
   const [bridgeUrl, setBridgeUrlInput] = useState(() => getBridgeUrl());
   const [bridgeStatus, setBridgeStatus] = useState('');
+  const [dApiKey, setDApiKey] = useState('');
+  const [dClient, setDClient] = useState('');
+  const [dPin, setDPin] = useState('');
+  const [dTotp, setDTotp] = useState('');
+  const [directStatus, setDirectStatus] = useState('');
+  const [directOn, setDirectOn] = useState(false);
+  useEffect(() => {
+    getDirectCreds().then(c => setDirectOn(!!c)).catch(() => undefined);
+  }, []);
 
   const active = accounts.find(a => a.id === activeAccountId) ?? accounts[0];
   const cfg = (active && CURRENCIES.find(c => c.code === active.currency)) ?? CURRENCIES[0];
@@ -92,6 +102,65 @@ export function AccountModal({
           </div>
 
           <div className="col gap-3">
+            {/* Broker direct: on-device Angel login, no server needed */}
+            <div style={{ padding: '14px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <div className="mono font-bold" style={{ fontSize: 12, color: '#fcd34d', letterSpacing: '0.04em' }}>
+                BROKER DIRECT · ANGEL ONE {directOn ? '· ON' : ''}
+              </div>
+              <p style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
+                No bridge needed: the app logs into Angel itself for live index ticks. Secrets stay Keystore-encrypted on this phone — enter them only in the installed app, never a browser preview.
+              </p>
+              {(['API key', 'Client code', 'PIN', 'TOTP secret'] as const).map((label, i) => (
+                <input
+                  key={label}
+                  type="password"
+                  autoComplete="off"
+                  value={[dApiKey, dClient, dPin, dTotp][i]}
+                  onChange={e => [setDApiKey, setDClient, setDPin, setDTotp][i](e.target.value)}
+                  placeholder={label}
+                  spellCheck={false}
+                  style={{
+                    width: '100%', marginTop: 6, background: '#000', color: 'var(--text-primary)',
+                    border: '1px solid var(--border-mid)', padding: '8px 10px',
+                    fontFamily: 'var(--font-mono)', fontSize: 12, borderRadius: 0,
+                  }}
+                />
+              ))}
+              <div className="row gap-2" style={{ marginTop: 8 }}>
+                <button
+                  className="btn"
+                  style={{ flex: 1, padding: '8px 0', fontSize: 11 }}
+                  onClick={async () => {
+                    setDirectStatus('Testing login…');
+                    const msg = await testDirectLogin({
+                      apiKey: dApiKey, client: dClient, pin: dPin, totp: dTotp,
+                    });
+                    setDirectStatus(msg);
+                    setDirectOn(msg.startsWith('Angel login OK'));
+                    if (msg.startsWith('Angel login OK')) { setDApiKey(''); setDClient(''); setDPin(''); setDTotp(''); }
+                  }}
+                >
+                  SAVE & TEST LOGIN
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: '8px 12px', fontSize: 11 }}
+                  onClick={async () => {
+                    await clearDirectCreds();
+                    setDirectOn(false);
+                    setDirectStatus('Broker direct cleared.');
+                  }}
+                >
+                  CLEAR
+                </button>
+              </div>
+              {directStatus && (
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>
+                  {directStatus}
+                </p>
+              )}
+            </div>
+
             {/* Live data: Angel bridge */}
             <div style={{ padding: '14px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
               <div className="mono font-bold" style={{ fontSize: 12, color: '#6ee7b7', letterSpacing: '0.04em' }}>

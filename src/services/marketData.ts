@@ -106,7 +106,7 @@ interface AngelLtp { market_open: boolean; stale: boolean; broker?: string | nul
 let angelCache: { ts: number; data: AngelLtp } | null = null;
 const ANGEL_TTL_MS = 5000;
 
-async function fetchAngelLtp(): Promise<AngelLtp | null> {
+async function fetchBridgeLtp(): Promise<AngelLtp | null> {
   const base = getBridgeUrl();
   if (!base) return null;
   if (angelCache && Date.now() - angelCache.ts < ANGEL_TTL_MS) return angelCache.data;
@@ -118,6 +118,26 @@ async function fetchAngelLtp(): Promise<AngelLtp | null> {
     return data;
   } catch {
     return angelCache?.data ?? null; // brief blips keep serving the last good read
+  }
+}
+
+async function fetchAngelLtp(): Promise<AngelLtp | null> {
+  // Bridge first (shared, zero secrets on device); direct on-device login second.
+  const fromBridge = await fetchBridgeLtp();
+  if (fromBridge) return fromBridge;
+  try {
+    const { fetchDirectLTPs } = await import('./angelDirect');
+    const direct = await fetchDirectLTPs();
+    if (!direct || !Object.keys(direct).length) return angelCache?.data ?? null;
+    const data: AngelLtp['data'] = {};
+    for (const [id, v] of Object.entries(direct)) data[id] = { price: v.price, ts: v.ts };
+    // No bridge means no bridge market flag either — treat as live; the
+    // per-symbol isMarketOpen gate in applyAngelOverlay still applies.
+    const live: AngelLtp = { market_open: true, stale: false, broker: 'angel', data };
+    angelCache = { ts: Date.now(), data: live };
+    return live;
+  } catch {
+    return angelCache?.data ?? null;
   }
 }
 
