@@ -1,5 +1,6 @@
 import { SecureStorage } from '@aparajita/capacitor-secure-storage';
-import { totpNow } from './totp';
+import { totpNow } from '../totp';
+import type { BrokerDef, DirectId, LtpTick } from './types';
 
 // On-device Angel One SmartAPI: login + LTP polling with zero server.
 // Credentials live ONLY in Keystore-encrypted secure storage (Android).
@@ -28,7 +29,6 @@ const TOKENS = {
   SENSEX: { exchange: 'BSE', token: '99919000' },
 } as const;
 
-export type DirectId = keyof typeof TOKENS;
 
 function baseHeaders(apiKey: string, jwt?: string): Record<string, string> {
   return {
@@ -120,11 +120,11 @@ export async function testDirectLogin(c: DirectCreds): Promise<string> {
   }
 }
 
-let directCache: { ts: number; data: Record<DirectId, { price: number; ts: string }> } | null = null;
+let directCache: { ts: number; data: Record<DirectId, LtpTick> } | null = null;
 const DIRECT_TTL_MS = 5000;
 
 /** LTP for the 3 indices straight from Angel. Null when unconfigured/offline. */
-export async function fetchDirectLTPs(): Promise<Record<DirectId, { price: number; ts: string }> | null> {
+export async function fetchDirectLTPs(): Promise<Record<DirectId, LtpTick> | null> {
   const creds = await getDirectCreds();
   if (!creds) return null;
   if (directCache && Date.now() - directCache.ts < DIRECT_TTL_MS) return directCache.data;
@@ -155,7 +155,7 @@ export async function fetchDirectLTPs(): Promise<Record<DirectId, { price: numbe
       j = await attempt(jwt);
       if (j === 'UNAUTHORIZED') throw new Error('token rejected even after fresh login');
     }
-    const out = {} as Record<DirectId, { price: number; ts: string }>;
+    const out = {} as Record<DirectId, LtpTick>;
     const now = new Date().toISOString();
     for (const row of j?.data?.fetched ?? []) {
       const found = (Object.keys(TOKENS) as DirectId[]).find(
@@ -172,3 +172,23 @@ export async function fetchDirectLTPs(): Promise<Record<DirectId, { price: numbe
     return directCache?.data ?? null;
   }
 }
+
+export const angelBroker: BrokerDef = {
+  id: 'angel',
+  label: 'Angel One',
+  feedLabel: 'ANGEL',
+  fields: [
+    { key: 'apiKey', label: 'API key' },
+    { key: 'client', label: 'Client code' },
+    { key: 'pin', label: 'PIN', secret: true },
+    { key: 'totp', label: 'TOTP secret', secret: true, hint: 'The text secret, not the 6-digit code' },
+  ],
+  async getCreds() {
+    const c = await getDirectCreds();
+    return c ? { apiKey: c.apiKey, client: c.client, pin: c.pin, totp: c.totp } : null;
+  },
+  saveCreds: (v) => saveDirectCreds({ apiKey: v.apiKey ?? '', client: v.client ?? '', pin: v.pin ?? '', totp: v.totp ?? '' }),
+  clearCreds: clearDirectCreds,
+  testLogin: (v) => testDirectLogin({ apiKey: v.apiKey ?? '', client: v.client ?? '', pin: v.pin ?? '', totp: v.totp ?? '' }),
+  fetchLTPs: fetchDirectLTPs,
+};

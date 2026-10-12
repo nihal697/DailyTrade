@@ -4,7 +4,8 @@ import type { Account, Currency } from '../types/account';
 import { CURRENCIES } from '../types/account';
 import { formatCurrency, exportJSON, importJSON } from '../services/storage';
 import { getBridgeUrl, setBridgeUrl, testBridge } from '../services/marketData';
-import { getDirectCreds, testDirectLogin, clearDirectCreds } from '../services/angelDirect';
+import { BROKERS, getBroker, getActiveBroker, getActiveBrokerId, setActiveBrokerId } from '../services/brokers/index';
+import type { BrokerDef } from '../services/brokers/types';
 import { keepAliveAvailable, keepAliveStart, keepAliveStop, keepAliveBatteryOk, keepAliveBatteryExempt, keepAliveRunning } from '../services/keepAlive';
 import type { AppState } from '../services/storage';
 
@@ -39,16 +40,18 @@ export function AccountModal({
   const [error, setError] = useState('');
   const [bridgeUrl, setBridgeUrlInput] = useState(() => getBridgeUrl());
   const [bridgeStatus, setBridgeStatus] = useState('');
-  const [dApiKey, setDApiKey] = useState('');
-  const [dClient, setDClient] = useState('');
-  const [dPin, setDPin] = useState('');
-  const [dTotp, setDTotp] = useState('');
+  const [brokerId, setBrokerId] = useState(() => getActiveBrokerId());
+  const [fieldVals, setFieldVals] = useState<Record<string, string>>({});
   const [directStatus, setDirectStatus] = useState('');
   const [directOn, setDirectOn] = useState(false);
+  const brokerDef: BrokerDef = getBroker(brokerId) ?? BROKERS[0];
   const [watchOn, setWatchOn] = useState(false);
   const [watchStatus, setWatchStatus] = useState('');
   useEffect(() => {
-    getDirectCreds().then(c => setDirectOn(!!c)).catch(() => undefined);
+    getActiveBroker().then(b => {
+      setBrokerId(b.id);
+      return b.getCreds();
+    }).then(c => setDirectOn(!!c)).catch(() => undefined);
     if (keepAliveAvailable()) {
       keepAliveRunning().then(setWatchOn).catch(() => undefined);
       keepAliveBatteryOk().then(ok => {
@@ -159,29 +162,58 @@ export function AccountModal({
               )}
             </div>
 
-            {/* Broker direct: on-device Angel login, no server needed */}
+            {/* Broker direct: on-device broker login, no server needed */}
             <div style={{ padding: '14px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
               <div className="mono font-bold" style={{ fontSize: 12, color: '#fcd34d', letterSpacing: '0.04em' }}>
-                BROKER DIRECT · ANGEL ONE {directOn ? '· ON' : ''}
+                BROKER DIRECT{directOn ? ' · ON' : ''}
               </div>
               <p style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
-                No bridge needed: the app logs into Angel itself for live index ticks. Secrets stay Keystore-encrypted on this phone — enter them only in the installed app, never a browser preview.
+                No bridge needed: the app logs into your broker itself for live index ticks. Secrets stay Keystore-encrypted on this phone — enter them only in the installed app, never a browser preview.
               </p>
-              {(['API key', 'Client code', 'PIN', 'TOTP secret'] as const).map((label, i) => (
-                <input
-                  key={label}
-                  type="password"
-                  autoComplete="off"
-                  value={[dApiKey, dClient, dPin, dTotp][i]}
-                  onChange={e => [setDApiKey, setDClient, setDPin, setDTotp][i](e.target.value)}
-                  placeholder={label}
-                  spellCheck={false}
-                  style={{
-                    width: '100%', marginTop: 6, background: '#000', color: 'var(--text-primary)',
-                    border: '1px solid var(--border-mid)', padding: '8px 10px',
-                    fontFamily: 'var(--font-mono)', fontSize: 12, borderRadius: 0,
-                  }}
-                />
+              <div className="row gap-2" style={{ marginTop: 8 }}>
+                {BROKERS.map(b => (
+                  <button
+                    key={b.id}
+                    className="btn"
+                    style={{
+                      flex: 1, padding: '8px 0', fontSize: 11,
+                      opacity: brokerId === b.id ? 1 : 0.45,
+                      border: brokerId === b.id ? '1px solid #fcd34d' : undefined,
+                    }}
+                    onClick={async () => {
+                      setBrokerId(b.id);
+                      setActiveBrokerId(b.id);
+                      setFieldVals({});
+                      setDirectStatus('');
+                      const c = await b.getCreds().catch(() => null);
+                      setDirectOn(!!c);
+                    }}
+                  >
+                    {b.label.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              {brokerDef.fields.map(f => (
+                <div key={f.key}>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={fieldVals[f.key] ?? ''}
+                    onChange={e => setFieldVals(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.label}
+                    spellCheck={false}
+                    style={{
+                      width: '100%', marginTop: 6, background: '#000', color: 'var(--text-primary)',
+                      border: '1px solid var(--border-mid)', padding: '8px 10px',
+                      fontFamily: 'var(--font-mono)', fontSize: 12, borderRadius: 0,
+                    }}
+                  />
+                  {f.hint && (
+                    <p style={{ fontFamily: 'var(--font-ui)', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {f.hint}
+                    </p>
+                  )}
+                </div>
               ))}
               <div className="row gap-2" style={{ marginTop: 8 }}>
                 <button
@@ -189,12 +221,11 @@ export function AccountModal({
                   style={{ flex: 1, padding: '8px 0', fontSize: 11 }}
                   onClick={async () => {
                     setDirectStatus('Testing login…');
-                    const msg = await testDirectLogin({
-                      apiKey: dApiKey, client: dClient, pin: dPin, totp: dTotp,
-                    });
+                    const msg = await brokerDef.testLogin(fieldVals);
                     setDirectStatus(msg);
-                    setDirectOn(msg.startsWith('Angel login OK'));
-                    if (msg.startsWith('Angel login OK')) { setDApiKey(''); setDClient(''); setDPin(''); setDTotp(''); }
+                    const ok = /login OK/i.test(msg);
+                    setDirectOn(ok);
+                    if (ok) setFieldVals({});
                   }}
                 >
                   SAVE & TEST LOGIN
@@ -203,7 +234,7 @@ export function AccountModal({
                   className="btn btn-ghost"
                   style={{ padding: '8px 12px', fontSize: 11 }}
                   onClick={async () => {
-                    await clearDirectCreds();
+                    await brokerDef.clearCreds();
                     setDirectOn(false);
                     setDirectStatus('Broker direct cleared.');
                   }}

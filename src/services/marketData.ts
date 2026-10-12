@@ -74,7 +74,7 @@ export async function testBridge(url: string): Promise<string> {
   }
 }
 
-const QUOTE_TO_ANGEL = new Map<string, AngelId>(
+const QUOTE_TO_INDEX = new Map<string, AngelId>(
   ASSETS.filter(a => a.angelId).map(a => [a.quoteSymbol, a.angelId as AngelId])
 );
 
@@ -122,18 +122,19 @@ async function fetchBridgeLtp(): Promise<AngelLtp | null> {
 }
 
 async function fetchAngelLtp(): Promise<AngelLtp | null> {
-  // Bridge first (shared, zero secrets on device); direct on-device login second.
+  // Bridge first (shared, zero secrets on device); active on-device broker second.
   const fromBridge = await fetchBridgeLtp();
   if (fromBridge) return fromBridge;
   try {
-    const { fetchDirectLTPs } = await import('./angelDirect');
-    const direct = await fetchDirectLTPs();
+    const { getActiveBroker } = await import('./brokers/index');
+    const broker = await getActiveBroker();
+    const direct = await broker.fetchLTPs();
     if (!direct || !Object.keys(direct).length) return angelCache?.data ?? null;
     const data: AngelLtp['data'] = {};
     for (const [id, v] of Object.entries(direct)) data[id] = { price: v.price, ts: v.ts };
     // No bridge means no bridge market flag either — treat as live; the
-    // per-symbol isMarketOpen gate in applyAngelOverlay still applies.
-    const live: AngelLtp = { market_open: true, stale: false, broker: 'angel', data };
+    // per-symbol isMarketOpen gate in applyBrokerOverlay still applies.
+    const live: AngelLtp = { market_open: true, stale: false, broker: broker.id, data };
     angelCache = { ts: Date.now(), data: live };
     return live;
   } catch {
@@ -142,17 +143,17 @@ async function fetchAngelLtp(): Promise<AngelLtp | null> {
 }
 
 /**
- * Overlay a live Angel price onto a Yahoo-built quote. Change stays anchored
+ * Overlay a live broker price onto a Yahoo-built quote. Change stays anchored
  * to Yahoo's official previous close; only the live price swaps in — and only
- * while the bridge reports the market open with a real tick. Anything else
+ * while the feed reports the market open with a real tick. Anything else
  * falls back to the untouched Yahoo quote. Never throws.
  */
-export async function applyAngelOverlay(quoteSymbol: string, quote: Quote): Promise<Quote> {
+export async function applyBrokerOverlay(quoteSymbol: string, quote: Quote): Promise<Quote> {
   try {
-    if (!QUOTE_TO_ANGEL.has(quoteSymbol)) return quote;
+    if (!QUOTE_TO_INDEX.has(quoteSymbol)) return quote;
     const ltp = await fetchAngelLtp();
     if (!ltp || ltp.stale || !ltp.market_open) return quote;
-    const tick = ltp.data[QUOTE_TO_ANGEL.get(quoteSymbol)!];
+    const tick = ltp.data[QUOTE_TO_INDEX.get(quoteSymbol)!];
     if (!tick || typeof tick.price !== 'number' || tick.price <= 0) return quote;
     const prevClose = quote.price - quote.change; // exact inverse of Yahoo construction
     if (!(prevClose > 0)) return quote;
@@ -329,7 +330,7 @@ export async function fetchYahooQuote(symbol: string): Promise<Quote | null> {
   };
 
   // Angel bridge (if configured): live price swaps in, Yahoo stays as fallback.
-  return applyAngelOverlay(symbol, yahooQuote);
+  return applyBrokerOverlay(symbol, yahooQuote);
 }
 
 // ─── Batch Quotes (in parallel chunks of 10) ──────────────────────────────────

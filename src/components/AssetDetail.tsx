@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, TrendingUp, TrendingDown, Star, BarChart2, ExternalLink } from 'lucide-react';
 import type { Asset, Quote } from '../types/market';
-import { applyAngelOverlay } from '../services/marketData';
+import { applyBrokerOverlay } from '../services/marketData';
 import { formatAssetPrice } from '../utils/formatPrice';
 
 interface AssetInfo {
@@ -113,7 +113,7 @@ export function AssetDetail({ asset, currentPrice, isFavourite, onToggleFavourit
     setNews([]);
     if (asset.class !== 'crypto') {
       fetchAssetInfo(asset.quoteSymbol).then(async d => {
-        if (d && !cancelled) d.quote = await applyAngelOverlay(asset.quoteSymbol, d.quote);
+        if (d && !cancelled) d.quote = await applyBrokerOverlay(asset.quoteSymbol, d.quote);
         if (!cancelled) { setInfo(d); setLoad(false); }
       });
     } else {
